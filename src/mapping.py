@@ -3,28 +3,30 @@ from fuzzywuzzy import fuzz
 import numpy as np
 import pandas as pd
 from itertools import product
+import re
 
-def clean_names(names):
-    """Clean names by removing punctuation and lowercasing"""
-    # lower case
-    # turn ampersand to "and"
-    # shorten anything "incorporated" should be inc
-    # "limited liability company" to llc?
-    # other company specific weirdnesses?
-    # then, remove all other punct
-    pass
-
-def clean_addresses(addresses):
-    # lower case
-    # how to parse and normalize? based on punct, state abbreve? or just keep whole string and do general cleanup?
-    pass
-
+def norm_string(s):
+    """Remove punctuation and lowercasing"""
+    s = s.lower().replace('&','and')
+    s = re.sub(r'[^\w\d\s]','',s)
+    return s
 
 class CompanyMap:
-    def __init__(self, name_cols=['NAME','DBA'], addr_col = 'ADDRESS', fuzzy_kwargs={}):
-        self.fuzzy_kwargs = fuzzy_kwargs
+    def __init__(self, name_cols=['NAME','DBA'], addr_col = 'ADDRESS', fuzzy_alg='ratio'):
         self.name_cols = name_cols
         self.addr_col = addr_col
+        self.cols = name_cols + [addr_col]
+
+        FUZZY_DICT = {
+            'ratio': fuzz.ratio,
+            'partial_ratio': fuzz.partial_ratio,
+            'token_sort_ratio': fuzz.token_sort_ratio,
+            'token_set_ratio': fuzz.token_set_ratio
+        }
+        try:
+            self.fuzzy_alg = FUZZY_DICT[fuzzy_alg]
+        except KeyError:
+            raise ValueError(f'Invalid fuzzy algorithm: {fuzzy_alg}. Must be one of {list(FUZZY_DICT.keys())}')
     
     def _fuzzycorr(self, X, Y):
         # make sure columns are same
@@ -32,31 +34,32 @@ class CompanyMap:
         for i,j in product(range(corr.shape[0]),range(corr.shape[1])):
             scores = []
             scores.append(max([
-                fuzz.ratio(X.iloc[i][c1], Y.iloc[j][c2]) 
+                self.fuzzy_alg(X.iloc[i][c1], Y.iloc[j][c2]) 
                 for c1,c2 in product(self.name_cols,self.name_cols)
                 if all([X.iloc[i][c1], Y.iloc[j][c2]])
             ]))
             if all([X.iloc[i][self.addr_col], Y.iloc[j][self.addr_col]]):
-                scores.append(fuzz.ratio(X.iloc[i][self.addr_col], Y.iloc[j][self.addr_col]))
+                scores.append(self.fuzzy_alg(X.iloc[i][self.addr_col], Y.iloc[j][self.addr_col]))
             corr[i,j] = np.mean(scores)
         return corr
 
     def fit(self, X):
-        """X should contain SOURCE, NAME, DBA, and ADDRESS"""
-        """what to do about original dataset ids?"""
-        #X['NAME'] = clean_names(X['NAME'])
-        #X['DBA'] = clean_names(X['DBA'])
-        #X['ADDRESS'] = clean_addresses(X['ADDRESS'])
-        X = X[self.name_cols+[self.addr_col]].fillna('')
+        
+        X = X[self.cols]
+        X = X.fillna('')
+
+        for c in self.cols:
+            X[c] = X[c].apply(lambda x: norm_string(x))
+
         self.learned_data = X.drop_duplicates()
         self.matrix = self._fuzzycorr(self.learned_data,self.learned_data)
         
     def match(self, X, threshold=80):
-        #X['CLEAN_NAME'] = clean_names(X['NAME'])
-        #X['CLEAN_DBA'] = clean_names(X['DBA'])
-        #X['CLEAN_ADDRESS'] = clean_addresses(X['ADDRESS'])
-        X = X[self.name_cols+[self.addr_col]].fillna('')
-        X.reset_index(drop=True, inplace=True)
+
+        X = X[self.cols].reset_index(drop=True)
+        X = X.fillna('')
+        for c in self.cols:
+            X[c] = X[c].apply(lambda x: norm_string(x))
 
         mat = self._fuzzycorr(X, self.learned_data)
         idx = np.argwhere(mat >= threshold)
@@ -74,10 +77,4 @@ class CompanyMap:
         results = results.groupby('source_idx').agg(list).reset_index()
 
         return results['match_indices']
-        
-
-# use this to then base full contractor list on registry (if does not exist in registry, prioritize which to use)
-# exists in registry flag
-# only join if score is > ?
-# if multiple matches, how to handle
-# how to evaluate matching
+    
