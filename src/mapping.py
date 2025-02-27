@@ -2,20 +2,19 @@
 from fuzzywuzzy import fuzz
 import numpy as np
 import pandas as pd
-from itertools import product
 import re
 
 def norm_string(s):
     """Remove punctuation and lowercasing"""
-    s = s.lower().replace('&','and')
-    s = re.sub(r'[^\w\d\s]','',s)
-    return s
+    if isinstance(s,str):
+        s = s.lower().replace('&','and')
+        s = re.sub(r'[^\w\d\s]','',s)
+        return s
+    return ''
 
 class CompanyMap:
-    def __init__(self, name_cols=['NAME','DBA'], addr_col = 'ADDRESS', fuzzy_alg='ratio'):
-        self.name_cols = name_cols
-        self.addr_col = addr_col
-        self.cols = name_cols + [addr_col]
+    def __init__(self, target_data, name_cols=['NAME','DBA'], addr_col = 'ADDRESS', fuzzy_alg='ratio'):
+        self._set_target(target_data,name_cols,addr_col)
 
         FUZZY_DICT = {
             'ratio': fuzz.ratio,
@@ -28,53 +27,56 @@ class CompanyMap:
         except KeyError:
             raise ValueError(f'Invalid fuzzy algorithm: {fuzzy_alg}. Must be one of {list(FUZZY_DICT.keys())}')
     
-    def _fuzzycorr(self, X, Y):
-        # make sure columns are same
-        corr = np.zeros((len(X), len(Y)))
-        for i,j in product(range(corr.shape[0]),range(corr.shape[1])):
-            scores = []
-            scores.append(max([
-                self.fuzzy_alg(X.iloc[i][c1], Y.iloc[j][c2]) 
-                for c1,c2 in product(self.name_cols,self.name_cols)
-                if all([X.iloc[i][c1], Y.iloc[j][c2]])
-            ]))
-            if all([X.iloc[i][self.addr_col], Y.iloc[j][self.addr_col]]):
-                scores.append(self.fuzzy_alg(X.iloc[i][self.addr_col], Y.iloc[j][self.addr_col]))
-            corr[i,j] = np.mean(scores)
-        return corr
+    def _score(self, x, y):
+        if (len(x)>0) & (len(y)>0):
+            return self.fuzzy_alg(x,y)
+        return np.nan
 
-    def fit(self, X):
+    def _set_target(self, X, name_cols, addr_col):
+
+        for c in name_cols + [addr_col]:
+            X['norm_'+c] = X[c].apply(lambda x: norm_string(x))
+
+        self.name_cols = ['norm_'+n for n in name_cols]
+        self.addr_col = 'norm_'+addr_col
+        self.cols = self.name_cols + [self.addr_col]
+
+        self.learned_data = X
         
-        X = X[self.cols]
-        X = X.fillna('')
+    def get_match_idx(self, names = [], address = '', threshold=95, avg_threshold=80):
 
-        for c in self.cols:
-            X[c] = X[c].apply(lambda x: norm_string(x))
+        names = [norm_string(n) for n in names]
+        address = norm_string(address)
 
-        self.learned_data = X.drop_duplicates()
-        self.matrix = self._fuzzycorr(self.learned_data,self.learned_data)
-        
-    def match(self, X, threshold=80):
+        namescore = []
+        for n in names:
+            for c in self.name_cols:
+                namescore.append(np.vstack(self.learned_data[c].apply(lambda x: self._score(x, n)).values))
+        namescore = np.nanmax(np.concatenate(namescore,axis=1),axis=1)
 
-        X = X[self.cols].reset_index(drop=True)
-        X = X.fillna('')
-        for c in self.cols:
-            X[c] = X[c].apply(lambda x: norm_string(x))
+        addrscore = self.learned_data[self.addr_col].apply(lambda x: self._score(x, address))
 
-        mat = self._fuzzycorr(X, self.learned_data)
-        idx = np.argwhere(mat >= threshold)
+        score = np.nanmean([namescore, addrscore],axis=0)
 
-        similar = np.tril(self.matrix,k=-1)
-        similar = similar[idx[:,1]]
-        sim_idx = np.argwhere(similar >= threshold)
-        similar = np.concatenate([
-            np.vstack(X.index[idx[sim_idx[:,0]][:,0]]),
-            np.vstack(sim_idx[:,1])
-        ],axis=1)
-        similar = np.concatenate([idx, similar],axis=0)
-
-        results = pd.DataFrame(similar, columns=['source_idx','match_indices']).drop_duplicates()
-        results = results.groupby('source_idx').agg(list).reset_index()
-
-        return results['match_indices']
+        return list(self.learned_data[(score >= avg_threshold) & ((namescore >= threshold) | (addrscore >= threshold))].index)
+    
+    def get_match_df(self, names = [], address = '', threshold=95, avg_threshold=80):
+        idx = self.get_match_idx(names, address, threshold, avg_threshold)
+        return self.learned_data.iloc[idx]
+    
+def fuzzy_join(
+        left_df, 
+        right_df, 
+        name_cols, 
+        addr_col, 
+        how='left', 
+        threshold=95, 
+        avg_threshold=80, 
+        fuzzy_alg='ratio',
+    ):
+    c = CompanyMap(right_df, name_cols, addr_col, fuzzy_alg)
+    matches = left_df.apply(lambda x: c.get_match_idx(x[name_cols], x[addr_col], threshold, avg_threshold), axis=1)
+    df = pd.concat([left_df, pd.DataFrame(matches.tolist())],axis=1).melt(id_vars=left_df.columns)
+    df = df.set_index('value',drop=False).join(c.learned_data,lsuffix='_l',rsuffix='_r',how=how)
+    return df
     
