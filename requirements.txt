@@ -22,6 +22,8 @@ executing==2.2.0
     # via stack-data
 fonttools==4.56.0
     # via matplotlib
+fuzzywuzzy==0.18.0
+    # via -r requirements.in
 ipython==8.32.0
     # via -r requirements.in
 jedi==0.19.2
@@ -67,6 +69,8 @@ python-dateutil==2.9.0.post0
     #   pandas
 pytz==2025.1
     # via pandas
+rapidfuzz==3.12.2
+    # via -r requirements.in
 seaborn==0.13.2
     # via -r requirements.in
 six==1.17.0
