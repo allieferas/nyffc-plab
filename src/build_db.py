@@ -29,7 +29,7 @@ theft = pd.read_csv('data/processed/cleaned_construction_nywagetheft.csv')
 theft['ADDRESS'] = theft['city'].fillna("") + " " + theft['zip_code'].fillna("")
 theft.rename(columns={'company_name':'NAME1'}, inplace=True)
 
-df_dict = {'REGISTRY': reg.iloc[:200].reset_index(drop=True), 'DEBARMENT': debar} # just doing this with a lil sample rn
+df_dict = {'REGISTRY': reg, 'DEBARMENT': debar}
 match = FuzzyMatch(['NAME1','NAME2'], 'ADDRESS', threshold=95, avg_threshold=80, fuzzy_alg=fuzz.ratio)
 match_df, df_dict = match.index_and_match(df_dict)
 

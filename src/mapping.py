@@ -10,7 +10,7 @@ tqdm.pandas()
 def norm_string(s):
     """Remove punctuation and lowercasing"""
     if isinstance(s,str):
-        s = s.lower().replace('&','and')
+        s = s.upper().replace('&','and')
         s = re.sub(r'[^\w\d\s]','',s)
         s = re.sub(r'\s+',' ',s)
         return s
@@ -50,7 +50,7 @@ class FuzzyMatch:
         score = np.nanmean([namescore, addrscore],axis=0)
 
         return list(self.name_df[
-            (score>=self.avg_threshold) & ((namescore>=self.threshold)|(addrscore>=self.threshold))
+            (score>=self.avg_threshold)|(namescore>=self.threshold)|(addrscore>=self.threshold)
         ].index)
     
     def _company_indexes(self, df_dict):

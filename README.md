@@ -16,11 +16,16 @@ NYC Awarded Contracts:
     * out: data/processed/Cleaned_NYC_Awarded_Contracts.csv
 
 Wage Theft:
-    * in: ??
+    * in: -
     * process: notebooks/Construction_NYWageTheft.ipynb
     * out: data/processed/cleaned_construction_nywagetheft.csv
 
 Construction Apprentices:
-    * in: ??
+    * in: -
     * process: notebooks/Construction_Apprentice.ipynb
     * out: data/processed/cleaned_construction_apprentice.csv #check, file doesn't match
+
+USDOL Wage Compliance:
+    * in: -
+    * process: notebooks/usdol_wage.ipynb
+    * out: data/processed/usdol_wage_construction.csv
