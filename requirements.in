@@ -6,3 +6,6 @@ tabula-py
 IPython
 rapidfuzz
 fuzzywuzzy
+tqdm
+tables
+streamlit
