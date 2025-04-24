@@ -59,6 +59,8 @@ class FuzzyMatch:
 
         for k,v in df_dict.items():
             for col in cols:
+                if col not in v.columns:
+                    v[col] = ''
                 v[col] = v[col].apply(lambda x: norm_string(x))
             df_dict[k] = v
 
